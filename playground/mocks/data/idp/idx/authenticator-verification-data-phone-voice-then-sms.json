@@ -24,7 +24,7 @@
                 {
                   "name":"id",
                   "required":true,
-                  "value":"id-phone-authenticator",
+                  "value":"id-phone-authenticatoror",
                   "mutable":false
                 },
                 {
@@ -235,7 +235,7 @@
       "type":"phone",
       "key": "phone_number",
       "id":"id-phone-authenticator",
-      "displayName":"id-phone-authenticator",
+      "displayName":"id-phone-authenticatoror",
       "methods":[
         {
           "type":"voice"
