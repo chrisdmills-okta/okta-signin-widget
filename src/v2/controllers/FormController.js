@@ -135,45 +135,45 @@ export default Controller.extend({
     this.options.appState.set('currentFormName', formName);
   },
 
-  handleInvokeAction(actionPath = '') {
+  async handleInvokeAction(actionPath = '') {
     const idx = this.options.appState.get('idx');
+    const { stateHandle } = idx.context;
+    const authClient = this.options.settings.getAuthClient();
+    let proceedOptions = {
+      exchangeCodeForTokens: false,
+      stateHandle,
+    };
+
+    if (idx['neededToProceed'].find(item => item.name === actionPath)) {
+      proceedOptions = { ...proceedOptions, step: actionPath };
+    } else if (_.isFunction(idx['actions'][actionPath])) {
+      proceedOptions = { ...proceedOptions, actions: [actionPath] };
+    } else {
+      this.options.settings.callGlobalError(`Invalid action selected: ${actionPath}`);
+      this.showFormErrors(this.formView.model, 'Invalid action selected.', this.formView.form);
+    }
+
+    let resp;
+    try {
+      resp = await authClient.idx.proceed(proceedOptions);
+    } catch (error) {
+      this.showFormErrors(this.formView.model, error, this.formView.form);
+    }
 
     if (actionPath === 'cancel') {
       this.options.settings.getAuthClient().idx.clearTransactionMeta();
       sessionStorageHelper.removeStateHandle();
       this.options.appState.clearAppStateCache();
+
+      if (this.options.settings.get('useInteractionCodeFlow')) {
+        // In this case we need to restart login flow and recreate transaction meta
+        // that will be used in interactionCodeFlow function
+        this.options.appState.trigger('restartLoginFlow');
+        return;
+      }
     }
 
-    if (idx['neededToProceed'].find(item => item.name === actionPath)) {
-      idx.proceed(actionPath, {})
-        .then(this.handleIdxResponse.bind(this))
-        .catch(error => {
-          this.showFormErrors(this.formView.model, error, this.formView.form);
-        });
-      return;
-    }
-
-    const actionFn = idx['actions'][actionPath];
-
-    if (_.isFunction(actionFn)) {
-      // TODO: OKTA-243167 what's the approach to show spinner indicating API in flight?
-      actionFn()
-        .then((resp) => {
-          if (actionPath === 'cancel' && this.options.settings.get('useInteractionCodeFlow')) {
-            // In this case we need to restart login flow and recreate transaction meta
-            // that will be used in interactionCodeFlow function
-            this.options.appState.trigger('restartLoginFlow');
-          } else {
-            this.handleIdxResponse(resp);
-          }
-        })
-        .catch(error => {
-          this.showFormErrors(this.formView.model, error, this.formView.form);
-        });
-    } else {
-      this.options.settings.callGlobalError(`Invalid action selected: ${actionPath}`);
-      this.showFormErrors(this.formView.model, 'Invalid action selected.', this.formView.form);
-    }
+    this.handleIdxResponse(resp);
   },
 
   // eslint-disable-next-line max-statements, complexity
