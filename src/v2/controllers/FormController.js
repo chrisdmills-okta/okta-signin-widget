@@ -18,6 +18,7 @@ import Util from '../../util/Util';
 import sessionStorageHelper from '../client/sessionStorageHelper';
 import { CONFIGURED_FLOW } from '../client/constants';
 import { IdxStatus } from '@okta/okta-auth-js';
+import Errors from 'util/Errors';
 
 export default Controller.extend({
   className: 'form-controller',
@@ -135,40 +136,54 @@ export default Controller.extend({
     this.options.appState.set('currentFormName', formName);
   },
 
+  // eslint-disable-next-line max-statements
   async handleInvokeAction(actionPath = '') {
-    const idx = this.options.appState.get('idx');
+    const { appState, settings } = this.options;
+    const idx = appState.get('idx');
     const { stateHandle } = idx.context;
-    const authClient = this.options.settings.getAuthClient();
+    const authClient = settings.getAuthClient();
     let proceedOptions = {
       exchangeCodeForTokens: false,
-      stateHandle,
+      stateHandle
     };
+    let resp;
+    let error;
 
     if (idx['neededToProceed'].find(item => item.name === actionPath)) {
       proceedOptions = { ...proceedOptions, step: actionPath };
     } else if (_.isFunction(idx['actions'][actionPath])) {
       proceedOptions = { ...proceedOptions, actions: [actionPath] };
     } else {
-      this.options.settings.callGlobalError(`Invalid action selected: ${actionPath}`);
-      this.showFormErrors(this.formView.model, 'Invalid action selected.', this.formView.form);
+      error = new Errors.ConfigError(`Invalid action selected: ${actionPath}`);
+      this.options.settings.callGlobalError(error);
+      this.showFormErrors(this.formView.model, error, this.formView.form);
+      return;
     }
 
-    let resp;
     try {
       resp = await authClient.idx.proceed(proceedOptions);
-    } catch (error) {
+      // Handle errors for this action
+      if (resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
+        error = resp;
+      }
+    } catch (e) {
+      error = e;
+    }
+
+    if (error) {
       this.showFormErrors(this.formView.model, error, this.formView.form);
+      return;
     }
 
     if (actionPath === 'cancel') {
-      this.options.settings.getAuthClient().idx.clearTransactionMeta();
+      settings.getAuthClient().idx.clearTransactionMeta();
       sessionStorageHelper.removeStateHandle();
-      this.options.appState.clearAppStateCache();
+      appState.clearAppStateCache();
 
-      if (this.options.settings.get('useInteractionCodeFlow')) {
+      if (settings.get('useInteractionCodeFlow')) {
         // In this case we need to restart login flow and recreate transaction meta
         // that will be used in interactionCodeFlow function
-        this.options.appState.trigger('restartLoginFlow');
+        appState.trigger('restartLoginFlow');
         return;
       }
     }
@@ -224,8 +239,8 @@ export default Controller.extend({
       if (resp.status === IdxStatus.FAILURE) {
         throw resp.error; // caught and handled in this function
       }
-      // Handle errors for the current form
-      if (resp.nextStep?.name === formName && resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
+      // Show errors on the current form
+      if (resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
         this.showFormErrors(model, resp, this.formView.form);
         return;
       }
