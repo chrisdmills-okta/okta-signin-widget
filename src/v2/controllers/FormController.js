@@ -149,7 +149,7 @@ export default Controller.extend({
 
     // Cancel action is executes synchronously
     if (actionPath === 'cancel') {
-      settings.getAuthClient().idx.clearTransactionMeta();
+      settings.getAuthClient().transactionManager.clear();
       sessionStorageHelper.removeStateHandle();
       appState.clearAppStateCache();
 
@@ -182,7 +182,7 @@ export default Controller.extend({
     let resp;
     let error;
     try {
-      resp = authClient.idx.proceed(invokeOptions);
+      resp = await authClient.idx.proceed(invokeOptions);
       // Handle errors for this action
       if (resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
         error = resp;
