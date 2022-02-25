@@ -137,44 +137,17 @@ export default Controller.extend({
   },
 
   // eslint-disable-next-line max-statements
-  async handleInvokeAction(actionPath = '') {
+  handleInvokeAction(actionPath = '') {
     const { appState, settings } = this.options;
     const idx = appState.get('idx');
     const { stateHandle } = idx.context;
-    const authClient = settings.getAuthClient();
-    let proceedOptions = {
+    let invokeOptions = {
       exchangeCodeForTokens: false,
       stateHandle
     };
-    let resp;
     let error;
 
-    if (idx['neededToProceed'].find(item => item.name === actionPath)) {
-      proceedOptions = { ...proceedOptions, step: actionPath };
-    } else if (_.isFunction(idx['actions'][actionPath])) {
-      proceedOptions = { ...proceedOptions, actions: [actionPath] };
-    } else {
-      error = new Errors.ConfigError(`Invalid action selected: ${actionPath}`);
-      this.options.settings.callGlobalError(error);
-      this.showFormErrors(this.formView.model, error, this.formView.form);
-      return;
-    }
-
-    try {
-      resp = await authClient.idx.proceed(proceedOptions);
-      // Handle errors for this action
-      if (resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
-        error = resp;
-      }
-    } catch (e) {
-      error = e;
-    }
-
-    if (error) {
-      this.showFormErrors(this.formView.model, error, this.formView.form);
-      return;
-    }
-
+    // Cancel action is executes synchronously
     if (actionPath === 'cancel') {
       settings.getAuthClient().idx.clearTransactionMeta();
       sessionStorageHelper.removeStateHandle();
@@ -186,6 +159,41 @@ export default Controller.extend({
         appState.trigger('restartLoginFlow');
         return;
       }
+    }
+
+    // Build options to invoke or throw error for invalid action
+    if (idx['neededToProceed'].find(item => item.name === actionPath)) {
+      invokeOptions = { ...invokeOptions, step: actionPath };
+    } else if (_.isFunction(idx['actions'][actionPath])) {
+      invokeOptions = { ...invokeOptions, actions: [actionPath] };
+    } else {
+      error = new Errors.ConfigError(`Invalid action selected: ${actionPath}`);
+      this.options.settings.callGlobalError(error);
+      this.showFormErrors(this.formView.model, error, this.formView.form);
+      return;
+    }
+
+    // action will be executed asynchronously
+    this.invokeAction(invokeOptions);
+  },
+
+  async invokeAction(invokeOptions) {
+    const authClient = this.options.settings.getAuthClient();
+    let resp;
+    let error;
+    try {
+      resp = authClient.idx.proceed(invokeOptions);
+      // Handle errors for this action
+      if (resp.messages?.length > 0 && resp.messages[0].class === 'ERROR') {
+        error = resp;
+      }
+    } catch (e) {
+      error = e;
+    }
+
+    if (error) {
+      this.showFormErrors(this.formView.model, error, this.formView.form);
+      return;
     }
 
     this.handleIdxResponse(resp);
